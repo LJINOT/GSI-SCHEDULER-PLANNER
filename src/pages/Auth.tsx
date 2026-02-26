@@ -13,75 +13,32 @@ export default function Auth() {
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [loading, setLoading] = useState(false);
-  const [showOtpInput, setShowOtpInput] = useState(false);
-  const [otp, setOtp] = useState("");
-  const [pendingEmail, setPendingEmail] = useState("");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
 
     if (isLogin) {
-      // Sign in with password (no OTP)
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) {
         toast.error(error.message);
       }
     } else {
-      // For sign up, create user then send OTP
       const { error } = await supabase.auth.signUp({
         email,
         password,
         options: {
+          emailRedirectTo: window.location.origin,
           data: { display_name: displayName },
         },
       });
       if (error) {
         toast.error(error.message);
       } else {
-        // Send OTP for verification
-        const { error: otpError } = await supabase.auth.signInWithOtp({
-          email,
-        });
-        if (otpError) {
-          toast.error(otpError.message);
-        } else {
-          setPendingEmail(email);
-          setShowOtpInput(true);
-          toast.success("OTP sent to your email!");
-        }
+        toast.success("Check your email to confirm your account!");
       }
     }
     setLoading(false);
-  };
-
-  const handleVerifyOtp = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-
-    const { error } = await supabase.auth.verifyOtp({
-      email: pendingEmail,
-      token: otp,
-      type: isLogin ? "email" : "signup",
-    });
-
-    if (error) {
-      toast.error(error.message);
-    } else {
-      toast.success("Authentication successful!");
-      // The user should be signed in now
-      handleReset();
-    }
-    setLoading(false);
-  };
-
-  const handleReset = () => {
-    setShowOtpInput(false);
-    setOtp("");
-    setPendingEmail("");
-    setEmail("");
-    setPassword("");
-    setDisplayName("");
   };
 
   return (
@@ -93,106 +50,58 @@ export default function Auth() {
             <CardTitle className="text-2xl font-bold">GSI Schedule Planner</CardTitle>
           </div>
           <CardDescription>
-            {showOtpInput
-              ? "Enter the code sent to your email"
-              : isLogin
-              ? "Sign in to your account"
-              : "Create a new account"}
+            {isLogin ? "Sign in to your account" : "Create a new account"}
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {!showOtpInput ? (
-            <form onSubmit={handleSubmit} className="space-y-4">
-              {!isLogin && (
-                <div className="space-y-2">
-                  <Label htmlFor="displayName">Display Name</Label>
-                  <Input
-                    id="displayName"
-                    value={displayName}
-                    onChange={(e) => setDisplayName(e.target.value)}
-                    placeholder="Your name"
-                    disabled={loading}
-                  />
-                </div>
-              )}
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {!isLogin && (
               <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
+                <Label htmlFor="displayName">Display Name</Label>
                 <Input
-                  id="email"
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="you@example.com"
-                  required
-                  disabled={loading}
+                  id="displayName"
+                  value={displayName}
+                  onChange={(e) => setDisplayName(e.target.value)}
+                  placeholder="Your name"
                 />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="password">Password</Label>
-                <Input
-                  id="password"
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  required
-                  minLength={6}
-                  disabled={loading}
-                />
-              </div>
-              <Button type="submit" className="w-full" disabled={loading}>
-                {loading ? "Loading..." : isLogin ? "Sign In" : "Sign Up"}
-              </Button>
-            </form>
-          ) : (
-            <form onSubmit={handleVerifyOtp} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="otp">Verification Code</Label>
-                <Input
-                  id="otp"
-                  type="text"
-                  value={otp}
-                  onChange={(e) => setOtp(e.target.value.toUpperCase())}
-                  placeholder="Enter the 6-digit code"
-                  maxLength={6}
-                  disabled={loading}
-                  required
-                />
-                <p className="text-xs text-muted-foreground">
-                  Check your email at {pendingEmail}
-                </p>
-              </div>
-              <Button type="submit" className="w-full" disabled={loading}>
-                {loading ? "Verifying..." : "Verify Code"}
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                className="w-full"
-                onClick={handleReset}
-                disabled={loading}
-              >
-                Back
-              </Button>
-            </form>
-          )}
-
-          {!showOtpInput && (
-            <div className="mt-4 text-center text-sm">
-              <button
-                type="button"
-                className="text-muted-foreground hover:text-foreground underline"
-                onClick={() => {
-                  setIsLogin(!isLogin);
-                  handleReset();
-                }}
-              >
-                {isLogin
-                  ? "Don't have an account? Sign up"
-                  : "Already have an account? Sign in"}
-              </button>
+            )}
+            <div className="space-y-2">
+              <Label htmlFor="email">Email</Label>
+              <Input
+                id="email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@example.com"
+                required
+              />
             </div>
-          )}
+            <div className="space-y-2">
+              <Label htmlFor="password">Password</Label>
+              <Input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
+                required
+                minLength={6}
+              />
+            </div>
+            <Button type="submit" className="w-full" disabled={loading}>
+              {loading ? "Loading..." : isLogin ? "Sign In" : "Sign Up"}
+            </Button>
+          </form>
+          <div className="mt-4 text-center text-sm">
+            <button
+              type="button"
+              className="text-muted-foreground hover:text-foreground underline"
+              onClick={() => setIsLogin(!isLogin)}
+            >
+              {isLogin ? "Don't have an account? Sign up" : "Already have an account? Sign in"}
+            </button>
+          </div>
         </CardContent>
       </Card>
     </div>
