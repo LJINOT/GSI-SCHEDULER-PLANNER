@@ -17,29 +17,18 @@ export default function Auth() {
   const [otp, setOtp] = useState("");
   const [pendingEmail, setPendingEmail] = useState("");
 
-  const handleSendOtp = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
 
     if (isLogin) {
-      // Send OTP for sign in
-      const { error } = await supabase.auth.signInWithOtp({
-        email,
-        options: {
-          emailRedirectTo: window.location.origin,
-        },
-      });
+      // Sign in with password (no OTP)
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) {
         toast.error(error.message);
-        setLoading(false);
-      } else {
-        setPendingEmail(email);
-        setShowOtpInput(true);
-        toast.success("OTP sent to your email!");
-        setLoading(false);
       }
     } else {
-      // For sign up, first create user then send OTP
+      // For sign up, create user then send OTP
       const { error } = await supabase.auth.signUp({
         email,
         password,
@@ -49,7 +38,6 @@ export default function Auth() {
       });
       if (error) {
         toast.error(error.message);
-        setLoading(false);
       } else {
         // Send OTP for verification
         const { error: otpError } = await supabase.auth.signInWithOtp({
@@ -65,9 +53,9 @@ export default function Auth() {
           setShowOtpInput(true);
           toast.success("OTP sent to your email!");
         }
-        setLoading(false);
       }
     }
+    setLoading(false);
   };
 
   const handleVerifyOtp = async (e: React.FormEvent) => {
@@ -117,7 +105,7 @@ export default function Auth() {
         </CardHeader>
         <CardContent>
           {!showOtpInput ? (
-            <form onSubmit={handleSendOtp} className="space-y-4">
+            <form onSubmit={handleSubmit} className="space-y-4">
               {!isLogin && (
                 <div className="space-y-2">
                   <Label htmlFor="displayName">Display Name</Label>
@@ -142,23 +130,21 @@ export default function Auth() {
                   disabled={loading}
                 />
               </div>
-              {!isLogin && (
-                <div className="space-y-2">
-                  <Label htmlFor="password">Password</Label>
-                  <Input
-                    id="password"
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="••••••••"
-                    required
-                    minLength={6}
-                    disabled={loading}
-                  />
-                </div>
-              )}
+              <div className="space-y-2">
+                <Label htmlFor="password">Password</Label>
+                <Input
+                  id="password"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  required
+                  minLength={6}
+                  disabled={loading}
+                />
+              </div>
               <Button type="submit" className="w-full" disabled={loading}>
-                {loading ? "Sending..." : isLogin ? "Sign In with Code" : "Sign Up"}
+                {loading ? "Loading..." : isLogin ? "Sign In" : "Sign Up"}
               </Button>
             </form>
           ) : (
