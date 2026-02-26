@@ -43,7 +43,7 @@ export default function Auth() {
         const { error: otpError } = await supabase.auth.signInWithOtp({
           email,
           options: {
-            emailRedirectTo: window.location.origin,
+            emailRedirectTo: https://6be7b841.gsi-scheduler-planner.pages.dev,
           },
         });
         if (otpError) {
