@@ -1,4 +1,3 @@
-
 -- Profiles table
 CREATE TABLE public.profiles (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -66,6 +65,22 @@ CREATE POLICY "Users can view own time entries" ON public.time_entries FOR SELEC
 CREATE POLICY "Users can insert own time entries" ON public.time_entries FOR INSERT WITH CHECK (auth.uid() = user_id);
 CREATE POLICY "Users can update own time entries" ON public.time_entries FOR UPDATE USING (auth.uid() = user_id);
 CREATE POLICY "Users can delete own time entries" ON public.time_entries FOR DELETE USING (auth.uid() = user_id);
+
+-- OTP codes table for email verification
+CREATE TABLE public.otp_codes (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  email TEXT NOT NULL,
+  code TEXT NOT NULL,
+  expires_at TIMESTAMPTZ NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE(user_id, email)
+);
+
+ALTER TABLE public.otp_codes ENABLE ROW LEVEL SECURITY;
+
+-- Index for faster OTP lookups
+CREATE INDEX idx_otp_codes_email_expires ON public.otp_codes(email, expires_at);
 
 -- Auto-create profile on signup
 CREATE OR REPLACE FUNCTION public.handle_new_user()
