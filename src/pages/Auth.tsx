@@ -42,9 +42,6 @@ export default function Auth() {
         // Send OTP for verification
         const { error: otpError } = await supabase.auth.signInWithOtp({
           email,
-          options: {
-            emailRedirectTo: https://6be7b841.gsi-scheduler-planner.pages.dev,
-          },
         });
         if (otpError) {
           toast.error(otpError.message);
