@@ -1,8 +1,8 @@
 import {
-  LayoutDashboard, ListTodo, PlusCircle, CalendarDays, Clock, Target,
-  Sun, CalendarRange, CheckCircle2, LogOut, Brain, Lightbulb, RefreshCw,
+  LayoutDashboard, ListTodo, CalendarDays, Clock, Target,
+  Sun, CalendarRange, CheckCircle2, LogOut, Lightbulb, RefreshCw,
   Focus, AlertTriangle, BarChart3, User, Settings, Palette, HelpCircle,
-  ChevronDown, FolderKanban, Sparkles, Code2
+  ChevronDown, FolderKanban, Sparkles, Code2,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useNavigate } from "react-router-dom";
@@ -19,7 +19,7 @@ import { Separator } from "@/components/ui/separator";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { useState, useEffect } from "react";
 import { useDevUnlock } from "@/hooks/use-dev-mode";
-
+import { cn } from "@/lib/utils";
 
 const managementItems = [
   { title: "Tasks", url: "/tasks", icon: ListTodo },
@@ -34,7 +34,6 @@ const referentialItems = [
   { title: "This Week", url: "/this-week", icon: CalendarRange },
   { title: "Completed", url: "/completed", icon: CheckCircle2 },
 ];
-
 
 const smartFeatureItems = [
   { title: "Smart Suggestions", url: "/smart-suggestions", icon: Lightbulb },
@@ -54,6 +53,13 @@ const settingsItems = [
 
 const developerItem = { title: "Developer Mode", url: "/settings/developer", icon: Code2 };
 
+const navBase =
+  "relative flex items-center gap-2 rounded-lg px-2.5 py-2 text-sm transition-colors hover:bg-sidebar-accent/70";
+const navActive =
+  "bg-sidebar-accent text-sidebar-accent-foreground font-semibold before:absolute before:left-0 before:top-1/2 before:-translate-y-1/2 before:h-5 before:w-[3px] before:rounded-full before:bg-primary";
+const navActiveAi =
+  "bg-[#F5F3FF] text-ai font-semibold dark:bg-ai/15 before:absolute before:left-0 before:top-1/2 before:-translate-y-1/2 before:h-5 before:w-[3px] before:rounded-full before:bg-ai";
+
 export function AppSidebar() {
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
@@ -62,11 +68,10 @@ export function AppSidebar() {
   const visibleSettingsItems = unlocked
     ? [...settingsItems.slice(0, 4), developerItem, settingsItems[4]]
     : settingsItems;
-  const [smartOpen, setSmartOpen] = useState(false);
+  const [smartOpen, setSmartOpen] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [displayName, setDisplayName] = useState<string>("User");
-
 
   useEffect(() => {
     const load = async () => {
@@ -95,7 +100,9 @@ export function AppSidebar() {
     return () => window.removeEventListener("avatar-updated", handler);
   }, []);
 
-  const initials = displayName ? displayName.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2) : "U";
+  const initials = displayName
+    ? displayName.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2)
+    : "U";
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -103,17 +110,26 @@ export function AppSidebar() {
     navigate("/login");
   };
 
-  const renderGroup = (label: string, items: typeof managementItems) => (
+  const renderGroup = (
+    label: string,
+    items: typeof managementItems,
+    opts?: { ai?: boolean }
+  ) => (
     <SidebarGroup>
-      <SidebarGroupLabel>{label}</SidebarGroupLabel>
+      <SidebarGroupLabel className={cn(opts?.ai && "text-ai/80")}>{label}</SidebarGroupLabel>
       <SidebarGroupContent>
         <SidebarMenu>
           {items.map((item) => (
             <SidebarMenuItem key={item.title}>
               <SidebarMenuButton asChild>
-                <NavLink to={item.url} end className="hover:bg-accent/50" activeClassName="bg-accent text-primary font-medium">
-                  <item.icon className="mr-2 h-4 w-4" />
-                  {!collapsed && <span>{item.title}</span>}
+                <NavLink
+                  to={item.url}
+                  end
+                  className={navBase}
+                  activeClassName={opts?.ai ? navActiveAi : navActive}
+                >
+                  <item.icon className={cn("h-4 w-4 shrink-0", opts?.ai && "text-ai")} />
+                  {!collapsed && <span className="truncate">{item.title}</span>}
                 </NavLink>
               </SidebarMenuButton>
             </SidebarMenuItem>
@@ -123,12 +139,30 @@ export function AppSidebar() {
     </SidebarGroup>
   );
 
-  const renderCollapsibleGroup = (label: string, items: typeof smartFeatureItems, open: boolean, setOpen: (v: boolean) => void, accentColor: string) => (
+  const renderCollapsibleGroup = (
+    label: string,
+    items: typeof smartFeatureItems,
+    open: boolean,
+    setOpen: (v: boolean) => void,
+    opts?: { ai?: boolean }
+  ) => (
     <SidebarGroup>
       <Collapsible open={open} onOpenChange={setOpen}>
-        <CollapsibleTrigger className={`flex items-center justify-between w-full px-3 py-2 text-xs font-bold uppercase tracking-wider rounded-md transition-colors ${open ? `bg-primary/10 text-primary` : `text-sidebar-foreground/70 hover:bg-accent/50 hover:text-sidebar-foreground`}`}>
-          {!collapsed && <span>{label}</span>}
-          {!collapsed && <ChevronDown className={`h-3.5 w-3.5 transition-transform ${open ? "rotate-180" : ""}`} />}
+        <CollapsibleTrigger asChild>
+          <button
+            type="button"
+            className={cn(
+              "flex w-full items-center justify-between rounded-md px-2 py-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground hover:text-foreground",
+              opts?.ai && "text-ai/70 hover:text-ai"
+            )}
+          >
+            <span>{label}</span>
+            {!collapsed && (
+              <ChevronDown
+                className={cn("h-3.5 w-3.5 transition-transform", open && "rotate-180")}
+              />
+            )}
+          </button>
         </CollapsibleTrigger>
         <CollapsibleContent>
           <SidebarGroupContent>
@@ -136,9 +170,16 @@ export function AppSidebar() {
               {items.map((item) => (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton asChild>
-                    <NavLink to={item.url} end className="hover:bg-accent/50" activeClassName="bg-accent text-primary font-medium">
-                      <item.icon className="mr-2 h-4 w-4" />
-                      {!collapsed && <span>{item.title}</span>}
+                    <NavLink
+                      to={item.url}
+                      end
+                      className={navBase}
+                      activeClassName={opts?.ai ? navActiveAi : navActive}
+                    >
+                      <item.icon
+                        className={cn("h-4 w-4 shrink-0", opts?.ai && "text-ai")}
+                      />
+                      {!collapsed && <span className="truncate">{item.title}</span>}
                     </NavLink>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
@@ -151,25 +192,30 @@ export function AppSidebar() {
   );
 
   return (
-    <Sidebar collapsible="icon">
+    <Sidebar collapsible="icon" className="border-r border-sidebar-border bg-sidebar">
       <SidebarHeader className="p-4">
-        <NavLink to="/" className="flex items-center gap-2">
-          <img src="/favicon.ico" alt="GSI Logo" className="h-6 w-6 rounded-full" />
-          {!collapsed && <span className="font-display text-lg font-bold">GSI Schedule Planner</span>}
+        <NavLink to="/" className="flex items-center gap-2.5 group">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 ring-1 ring-primary/20">
+            <img src="/favicon.ico" alt="GSI Logo" className="h-5 w-5 rounded-full" />
+          </div>
+          {!collapsed && (
+            <span className="font-display text-base font-bold tracking-tight text-foreground group-hover:text-primary transition-colors">
+              GSI Schedule Planner
+            </span>
+          )}
         </NavLink>
       </SidebarHeader>
 
-      <Separator />
+      <Separator className="opacity-60" />
 
-      <SidebarContent>
-        {/* Dashboard */}
+      <SidebarContent className="gap-1">
         <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu>
               <SidebarMenuItem>
                 <SidebarMenuButton asChild>
-                  <NavLink to="/" end className="hover:bg-accent/50" activeClassName="bg-accent text-primary font-medium">
-                    <LayoutDashboard className="mr-2 h-4 w-4" />
+                  <NavLink to="/" end className={navBase} activeClassName={navActive}>
+                    <LayoutDashboard className="h-4 w-4 shrink-0" />
                     {!collapsed && <span>Dashboard</span>}
                   </NavLink>
                 </SidebarMenuButton>
@@ -180,16 +226,34 @@ export function AppSidebar() {
 
         {renderGroup("Management", managementItems)}
         {renderGroup("Overview", referentialItems)}
-        {renderCollapsibleGroup("Intelligent System Modules", smartFeatureItems, smartOpen, setSmartOpen, "primary")}
-        {renderCollapsibleGroup("Settings", visibleSettingsItems, settingsOpen, setSettingsOpen, "primary")}
+        {renderCollapsibleGroup(
+          "Smart Features",
+          smartFeatureItems,
+          smartOpen,
+          setSmartOpen,
+          { ai: true }
+        )}
+        {renderCollapsibleGroup(
+          "Settings",
+          visibleSettingsItems,
+          settingsOpen,
+          setSettingsOpen
+        )}
       </SidebarContent>
 
       <SidebarFooter className="p-3">
-        <Separator className="mb-3" />
-        <NavLink to="/settings/profile" className="flex items-center gap-2 rounded-md p-1 hover:bg-accent/50 transition-colors">
-          <Avatar className="h-9 w-9 ring-2 ring-primary/20">
-            {avatarUrl && <img src={avatarUrl} alt="Profile" className="h-full w-full object-cover" />}
-            <AvatarFallback className="bg-primary/10 text-primary text-xs">{initials}</AvatarFallback>
+        <Separator className="mb-3 opacity-60" />
+        <NavLink
+          to="/settings/profile"
+          className="flex items-center gap-2.5 rounded-lg p-1.5 hover:bg-sidebar-accent transition-colors"
+        >
+          <Avatar className="h-9 w-9 ring-2 ring-primary/15">
+            {avatarUrl && (
+              <img src={avatarUrl} alt="Profile" className="h-full w-full object-cover" />
+            )}
+            <AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">
+              {initials}
+            </AvatarFallback>
           </Avatar>
           {!collapsed && (
             <div className="flex-1 min-w-0">
@@ -198,14 +262,16 @@ export function AppSidebar() {
             </div>
           )}
         </NavLink>
-        {!collapsed && (
-          <Button variant="ghost" size="sm" onClick={handleLogout} className="w-full justify-start gap-2 mt-2">
-            <LogOut className="h-4 w-4" />
-            <span>Log Out</span>
-          </Button>
-        )}
+        <Button
+          variant="ghost"
+          size="sm"
+          className="mt-2 w-full justify-start text-muted-foreground hover:text-destructive"
+          onClick={handleLogout}
+        >
+          <LogOut className="mr-2 h-4 w-4" />
+          {!collapsed && "Log out"}
+        </Button>
       </SidebarFooter>
-
     </Sidebar>
   );
 }
