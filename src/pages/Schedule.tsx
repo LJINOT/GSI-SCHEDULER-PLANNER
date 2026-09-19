@@ -67,14 +67,18 @@ export default function Schedule() {
 
   const fetchUnscheduled = async () => {
     setLoadingTasks(true);
+    // Match what generate-schedule considers: not done, not archived.
+    // Prefer tasks with no start_time; if none, show all active tasks so the button stays usable.
     const { data } = await supabase
       .from("tasks")
       .select("id, title, status, due_date, start_time, estimated_duration, priority_score, category")
       .eq("archived", false)
       .neq("status", "done")
-      .is("start_time", null)
       .order("priority_score", { ascending: false });
-    setUnscheduled((data as TaskRow[]) || []);
+
+    const rows = (data as TaskRow[]) || [];
+    const noStart = rows.filter((t) => !t.start_time);
+    setUnscheduled(noStart.length > 0 ? noStart : rows);
     setLoadingTasks(false);
   };
 
@@ -118,7 +122,8 @@ export default function Schedule() {
             Create an optimized schedule from your unscheduled tasks.
           </p>
         </div>
-        <Button onClick={generateSchedule} disabled={generating || unscheduled.length === 0}>
+        {/* Button stays clickable unless loading or currently generating */}
+        <Button onClick={generateSchedule} disabled={generating || loadingTasks}>
           {generating ? (
             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
           ) : (
