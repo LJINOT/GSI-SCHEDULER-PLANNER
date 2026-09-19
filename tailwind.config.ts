@@ -11,9 +11,11 @@ export default {
       screens: { "2xl": "1400px" },
     },
     extend: {
-      fontFamily: {
-        sans: ["Inter", "sans-serif"],
-        display: ["Space Grotesk", "sans-serif"],
+     ai: { DEFAULT: "hsl(var(--ai))", foreground: "hsl(var(--ai-foreground))" },
+pink: { DEFAULT: "hsl(var(--pink))", foreground: "hsl(var(--pink-foreground))" },
+success: { DEFAULT: "hsl(var(--success))", foreground: "hsl(var(--success-foreground))" },
+warning: { DEFAULT: "hsl(var(--warning))", foreground: "hsl(var(--warning-foreground))" },
+info: { DEFAULT: "hsl(var(--info))", foreground: "hsl(var(--info-foreground))" },
       },
       colors: {
         border: "hsl(var(--border))",
