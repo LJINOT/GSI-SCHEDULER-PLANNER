@@ -12,26 +12,25 @@ export function statusLabel(status: string | null | undefined): string {
 
 export const statusBadgeClass: Record<string, string> = {
   todo: "bg-muted text-foreground border-border",
-  in_progress: "bg-warning/15 text-warning border-warning/30",
-  done: "bg-success/15 text-success border-success/30",
+  in_progress: "bg-info/10 text-info border-info/30",
+  done: "bg-success/10 text-success border-success/30",
 };
 
-/** Distinct visual treatment for each priority level. */
 export const PRIORITY_STYLES: Record<string, { label: string; className: string; dot: string }> = {
   high: {
-    label: "HIGH",
-    className: "bg-destructive text-destructive-foreground border-transparent font-bold tracking-wide",
-    dot: "bg-destructive",
+    label: "High",
+    className: "bg-[#FEF2F2] text-[#EF4444] border-[#FECACA] font-semibold",
+    dot: "bg-[#EF4444]",
   },
   medium: {
     label: "Medium",
-    className: "bg-warning/15 text-warning border-warning/40 font-semibold",
-    dot: "bg-warning",
+    className: "bg-[#FFFBEB] text-[#F59E0B] border-[#FDE68A] font-semibold",
+    dot: "bg-[#F59E0B]",
   },
   low: {
-    label: "low",
-    className: "bg-muted text-muted-foreground border-border",
-    dot: "bg-muted-foreground",
+    label: "Low",
+    className: "bg-[#ECFDF5] text-[#10B981] border-[#A7F3D0] font-medium",
+    dot: "bg-[#10B981]",
   },
 };
 
