@@ -11,9 +11,9 @@ export function statusLabel(status: string | null | undefined): string {
 }
 
 export const statusBadgeClass: Record<string, string> = {
-  todo: "bg-muted text-foreground border-border",
-  in_progress: "bg-info/10 text-info border-info/30",
-  done: "bg-success/10 text-success border-success/30",
+  todo: "bg-primary/10 text-primary border-primary/20",
+  in_progress: "bg-ai/10 text-ai border-ai/25",
+  done: "bg-success/10 text-success border-success/25",
 };
 
 export const PRIORITY_STYLES: Record<string, { label: string; className: string; dot: string }> = {
