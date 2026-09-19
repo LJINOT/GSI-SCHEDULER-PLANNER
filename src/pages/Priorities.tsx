@@ -10,6 +10,7 @@ import { loadCache, saveCache } from "@/lib/persist-cache";
 import { DevPanel, DevStat, DevBar } from "@/components/DevPanel";
 import { useDevMode } from "@/hooks/use-dev-mode";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { format } from "date-fns";
 
 const CACHE_KEY = "gsi-cache:priorities-ranked";
 
@@ -23,7 +24,13 @@ type Ahp = {
   consistent: boolean;
 };
 type Payload = { tasks: RankedTask[]; ahp?: Ahp; algorithm?: string; timestamp?: string };
-type TaskMeta = { id: string; project_id: string | null; project_name: string | null };
+type TaskMeta = {
+  id: string;
+  project_id: string | null;
+  project_name: string | null;
+  due_date: string | null;
+  estimated_duration: number | null;
+};
 
 const PRIORITY_FILTERS = [
   { value: "all", label: "All" },
@@ -45,11 +52,17 @@ export default function Priorities() {
   useEffect(() => {
     supabase
       .from("tasks")
-      .select("id, project_id, projects(name)")
+      .select("id, project_id, due_date, estimated_duration, projects(name)")
       .then(({ data }) => {
         const map: Record<string, TaskMeta> = {};
         (data || []).forEach((t: any) => {
-          map[t.id] = { id: t.id, project_id: t.project_id, project_name: t.projects?.name || null };
+          map[t.id] = {
+            id: t.id,
+            project_id: t.project_id,
+            project_name: t.projects?.name || null,
+            due_date: t.due_date || null,
+            estimated_duration: t.estimated_duration ?? null,
+          };
         });
         setTaskMeta(map);
       });
@@ -81,8 +94,19 @@ export default function Priorities() {
     return ranked.filter((t) => t.priority === priorityFilter);
   }, [ranked, priorityFilter]);
 
+  const formatDeadline = (due: string | null | undefined) => {
+    if (!due) return "—";
+    try {
+      return format(new Date(due), "MMM d, yyyy");
+    } catch {
+      return "—";
+    }
+  };
 
-
+  const formatDuration = (mins: number | null | undefined) => {
+    if (mins == null) return "—";
+    return `${mins}m`;
+  };
 
   const renderTaskCard = (t: RankedTask, i: number, list: RankedTask[]) => {
     const next = list[i + 1];
@@ -101,6 +125,9 @@ export default function Priorities() {
                 </Badge>
               </div>
               <p className="text-xs text-muted-foreground mt-1">{t.reasoning}</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Deadline: {formatDeadline(meta?.due_date)} · Duration: {formatDuration(meta?.estimated_duration)}
+              </p>
             </div>
             {devMode && (
               <span className="font-mono text-sm font-semibold text-primary shrink-0">{t.score.toFixed(1)}</span>
@@ -170,10 +197,12 @@ export default function Priorities() {
       )}
 
       {ranked.length === 0 ? (
-        <Card><CardContent className="py-16 text-center text-muted-foreground">
-          <Target className="mx-auto h-12 w-12 mb-4 opacity-30" />
-          <p>Click "Rank with AHP" to get AI-powered priority rankings</p>
-        </CardContent></Card>
+        <Card>
+          <CardContent className="py-16 text-center text-muted-foreground">
+            <Target className="mx-auto h-12 w-12 mb-4 opacity-30" />
+            <p>Click "Rank with AHP" to get AI-powered priority rankings</p>
+          </CardContent>
+        </Card>
       ) : (
         <>
           <div className="flex items-center gap-3">
@@ -208,6 +237,8 @@ export default function Priorities() {
                         <th className="text-left font-medium px-4 py-2 w-12">#</th>
                         <th className="text-left font-medium px-4 py-2">Task</th>
                         <th className="text-left font-medium px-4 py-2 hidden sm:table-cell">Source</th>
+                        <th className="text-left font-medium px-4 py-2 whitespace-nowrap">Deadline</th>
+                        <th className="text-left font-medium px-4 py-2 whitespace-nowrap">Duration</th>
                         <th className="text-left font-medium px-4 py-2">Why it ranks here</th>
                         <th className="text-left font-medium px-4 py-2">Priority</th>
                       </tr>
@@ -224,6 +255,12 @@ export default function Priorities() {
                                 {meta?.project_id ? <Folder className="h-3 w-3" /> : <User className="h-3 w-3" />}
                                 {meta?.project_id ? meta.project_name || "Project" : "Stand-alone"}
                               </span>
+                            </td>
+                            <td className="px-4 py-3 text-muted-foreground whitespace-nowrap text-xs">
+                              {formatDeadline(meta?.due_date)}
+                            </td>
+                            <td className="px-4 py-3 text-muted-foreground whitespace-nowrap text-xs">
+                              {formatDuration(meta?.estimated_duration)}
                             </td>
                             <td className="px-4 py-3 text-muted-foreground max-w-md">{t.reasoning}</td>
                             <td className="px-4 py-3">
