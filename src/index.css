@@ -2,7 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap');
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap");
 
 @layer base {
   :root {
@@ -26,6 +26,7 @@
     --input: 214 32% 91%;
     --ring: 239 84% 67%;
     --radius: 1rem;
+
     --sidebar-background: 0 0% 100%;
     --sidebar-foreground: 215 16% 35%;
     --sidebar-primary: 239 84% 67%;
@@ -34,6 +35,7 @@
     --sidebar-accent-foreground: 239 84% 40%;
     --sidebar-border: 214 32% 93%;
     --sidebar-ring: 239 84% 67%;
+
     --success: 160 84% 39%;
     --success-foreground: 0 0% 100%;
     --warning: 38 92% 50%;
@@ -44,11 +46,13 @@
     --ai-foreground: 0 0% 100%;
     --pink: 330 81% 60%;
     --pink-foreground: 0 0% 100%;
+
     --category-work: 239 84% 67%;
     --category-personal: 258 90% 66%;
     --category-health: 160 84% 39%;
     --category-learning: 38 92% 50%;
     --category-other: 215 16% 47%;
+
     --priority-high: 0 84% 60%;
     --priority-medium: 38 92% 50%;
     --priority-low: 160 84% 39%;
@@ -74,6 +78,7 @@
     --border: 217 25% 18%;
     --input: 217 25% 18%;
     --ring: 239 84% 70%;
+
     --sidebar-background: 222 40% 9%;
     --sidebar-foreground: 215 16% 75%;
     --sidebar-primary: 239 84% 70%;
@@ -82,6 +87,7 @@
     --sidebar-accent-foreground: 239 84% 85%;
     --sidebar-border: 217 25% 16%;
     --sidebar-ring: 239 84% 70%;
+
     --success: 160 70% 42%;
     --success-foreground: 0 0% 100%;
     --warning: 38 85% 50%;
@@ -92,11 +98,13 @@
     --ai-foreground: 0 0% 100%;
     --pink: 330 75% 62%;
     --pink-foreground: 0 0% 100%;
+
     --category-work: 239 84% 70%;
     --category-personal: 258 85% 70%;
     --category-health: 160 70% 42%;
     --category-learning: 38 85% 50%;
     --category-other: 215 16% 55%;
+
     --priority-high: 0 72% 55%;
     --priority-medium: 38 85% 50%;
     --priority-low: 160 70% 42%;
@@ -104,12 +112,14 @@
 }
 
 @layer base {
-  * { @apply border-border; }
+  * {
+    @apply border-border;
+  }
 
   body {
     @apply text-foreground font-sans antialiased;
-    font-family: 'Inter', sans-serif;
-    background-color: #F4F7FF;
+    font-family: "Inter", sans-serif;
+    background-color: #f4f7ff;
     background-image:
       radial-gradient(circle at top left, rgba(79, 70, 229, 0.08), transparent 30%),
       radial-gradient(circle at top right, rgba(139, 92, 246, 0.07), transparent 30%),
@@ -125,31 +135,49 @@
       radial-gradient(circle at bottom right, rgba(6, 182, 212, 0.08), transparent 30%);
   }
 
-  h1, h2, h3, h4 { font-family: 'Space Grotesk', sans-serif; }
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-family: "Space Grotesk", sans-serif;
+  }
 }
 
 @layer components {
   .gsi-card {
-    @apply rounded-2xl border bg-card text-card-foreground shadow-[0_4px_20px_rgba(15,23,42,0.05)] transition-all duration-200;
+    @apply rounded-2xl border bg-card text-card-foreground transition-all duration-200;
+    box-shadow: 0 4px 20px rgba(15, 23, 42, 0.05);
   }
+
   .gsi-card:hover {
-    @apply shadow-[0_8px_28px_rgba(15,23,42,0.08)] -translate-y-0.5;
+    box-shadow: 0 8px 28px rgba(15, 23, 42, 0.08);
+    transform: translateY(-2px);
   }
+
   .gsi-ai-surface {
-    @apply rounded-2xl border border-ai/20;
-    background: linear-gradient(135deg, rgba(139, 92, 246, 0.10), rgba(79, 70, 229, 0.06));
+    @apply rounded-2xl border;
+    border-color: rgba(139, 92, 246, 0.2);
+    background: linear-gradient(
+      135deg,
+      rgba(139, 92, 246, 0.1),
+      rgba(79, 70, 229, 0.06)
+    );
   }
+
   .dark .gsi-ai-surface {
+    border-color: rgba(139, 92, 246, 0.35);
     background: linear-gradient(135deg, hsl(258 40% 14%), hsl(239 35% 12%));
-    border-color: hsl(var(--ai) / 0.35);
   }
+
   .gsi-icon-box {
     @apply inline-flex h-10 w-10 items-center justify-center rounded-xl shrink-0;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
+  *,
+  *::before,
+  *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
