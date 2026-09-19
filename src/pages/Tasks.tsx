@@ -289,40 +289,98 @@ export default function Tasks() {
         <Card><CardContent className="py-12 text-center text-muted-foreground">No tasks found. <Link to="/add-task" className="text-primary hover:underline">Create one?</Link></CardContent></Card>
       ) : (
         <div className="space-y-6">
-          {projects.length > 0 && (
-            <div>
-              <div className="flex items-center gap-2 mb-3">
-                <FolderKanban className="h-4 w-4 text-muted-foreground" />
-                <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Projects</h2>
+{projects.length > 0 && (
+  <div>
+    <div className="flex items-center gap-2 mb-3">
+      <FolderKanban className="h-4 w-4 text-muted-foreground" />
+      <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+        Projects
+      </h2>
+    </div>
+
+    <Accordion
+      type="multiple"
+      value={openProjects}
+      onValueChange={setOpenProjects}
+      className="space-y-3"
+    >
+      {projects.map((p) => {
+        const pt = tasksByProject(p.id);
+        const done = pt.filter((t) => t.status === "done").length;
+        const pct = pt.length === 0 ? 0 : Math.round((done / pt.length) * 100);
+
+        return (
+          <AccordionItem
+            key={p.id}
+            value={p.id}
+            ref={(el) => {
+              taskRefs.current[`project-${p.id}`] = el as unknown as HTMLDivElement;
+            }}
+            className="border-0 bg-transparent"
+          >
+            {/* Folder-style trigger */}
+            <AccordionTrigger className="hover:no-underline p-0 [&>svg]:hidden group">
+              <div className="w-full flex items-stretch gap-0 rounded-xl overflow-hidden border bg-card hover:shadow-md transition-shadow text-left">
+                {/* Colored spine */}
+                <div
+                  className="w-3 shrink-0"
+                  style={{ backgroundColor: p.color }}
+                />
+
+                {/* Folder face */}
+                <div className="flex-1 min-w-0 px-4 py-3 flex items-center gap-4">
+                  {/* Folder icon */}
+                  <div
+                    className="relative h-11 w-12 shrink-0 rounded-md flex items-center justify-center"
+                    style={{
+                      backgroundColor: `${p.color}22`,
+                      border: `1.5px solid ${p.color}55`,
+                    }}
+                  >
+                    <div
+                      className="absolute top-1 left-1 right-1 h-2 rounded-t-sm"
+                      style={{ backgroundColor: p.color, opacity: 0.7 }}
+                    />
+                    <FolderKanban
+                      className="h-5 w-5 relative z-10"
+                      style={{ color: p.color }}
+                    />
+                  </div>
+
+                  {/* Name + count + progress */}
+                  <div className="flex-1 min-w-0">
+                    <p className="font-bold text-sm truncate leading-tight">
+                      {p.name}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {done}/{pt.length} tasks
+                      {pt.length > 0 && ` · ${pct}% complete`}
+                    </p>
+                    <Progress value={pct} className="h-1.5 mt-1.5" />
+                  </div>
+
+                  <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0 transition-transform duration-200 group-data-[state=open]:rotate-180" />
+                </div>
               </div>
-              <Accordion type="multiple" value={openProjects} onValueChange={setOpenProjects} className="space-y-2">
-                {projects.map(p => {
-                  const pt = tasksByProject(p.id);
-                  const done = pt.filter(t => t.status === "done").length;
-                  const pct = pt.length === 0 ? 0 : Math.round((done / pt.length) * 100);
-                  return (
-                    <AccordionItem key={p.id} value={p.id} ref={(el) => { taskRefs.current[`project-${p.id}`] = el as unknown as HTMLDivElement; }} className="border rounded-lg bg-card">
-                      <AccordionTrigger className="px-4 hover:no-underline">
-                        <div className="flex items-center gap-3 flex-1 min-w-0">
-                          <span className="h-3 w-3 rounded-full shrink-0" style={{ backgroundColor: p.color }} />
-                          <span className="font-medium truncate">{p.name}</span>
-                          <Badge variant="outline" className="ml-auto mr-3">{done}/{pt.length}</Badge>
-                          <Progress value={pct} className="h-1.5 w-24 shrink-0" />
-                        </div>
-                      </AccordionTrigger>
-                      <AccordionContent className="px-4 pb-4">
-                        {pt.length === 0 ? (
-                          <p className="text-sm text-muted-foreground py-2">No tasks in this project.</p>
-                        ) : (
-                          <div className="space-y-2">{pt.map(renderTask)}</div>
-                        )}
-                      </AccordionContent>
-                    </AccordionItem>
-                  );
-                })}
-              </Accordion>
-            </div>
-          )}
+            </AccordionTrigger>
+
+            <AccordionContent className="pt-2 pb-1 px-1">
+              {pt.length === 0 ? (
+                <p className="text-sm text-muted-foreground py-3 px-3">
+                  No tasks in this project.
+                </p>
+              ) : (
+                <div className="space-y-2 rounded-lg border bg-muted/30 p-2">
+                  {pt.map(renderTask)}
+                </div>
+              )}
+            </AccordionContent>
+          </AccordionItem>
+        );
+      })}
+    </Accordion>
+  </div>
+)}
 
           {standalone.length > 0 && (
             <div>
