@@ -1,22 +1,28 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
-  PlusCircle, Clock, Target, CheckCircle2, Zap, Loader2, Sparkles,
-  CalendarRange, AlertTriangle, Focus, RefreshCw, BarChart3,
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from "@/components/ui/table";
+import {
+  PlusCircle, Loader2, AlertTriangle, Focus, RefreshCw, BarChart3, ChevronRight,
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
-import { formatPH, formatDate } from "@/lib/date-utils";
-import { statusLabel, statusBadgeClass } from "@/lib/status";
+import { formatPH } from "@/lib/date-utils";
+import { statusLabel, statusBadgeClass, priorityFromScore, PRIORITY_STYLES } from "@/lib/status";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from "recharts";
-import { toast } from "sonner";
-
+import { loadCache } from "@/lib/persist-cache";
+import { format, isToday, isTomorrow, isPast } from "date-fns";
 
 const fadeIn = { hidden: { opacity: 0, y: 8 }, show: { opacity: 1, y: 0 } };
-const stagger = { show: { transition: { staggerChildren: 0.08 } } };
+const stagger = { show: { transition: { staggerChildren: 0.06 } } };
+
+const TODAY_CACHE_KEY = "gsi-cache:today-picks";
+const ADAPTIVE_CACHE_KEY = "gsi-cache:adaptive-schedule";
+const AUTO_CACHE_KEY = "gsi-cache:schedule-blocks";
 
 type Task = {
   id: string;
@@ -27,55 +33,87 @@ type Task = {
   priority_score: number | null;
   category: string | null;
   project_id: string | null;
+  estimated_duration?: number | null;
 };
+
+type TodayPick = {
+  id: string;
+  title: string;
+  reason: string;
+  priority: string;
+  score?: number;
+};
+
+function dueShort(due: string | null): string {
+  if (!due) return "—";
+  try {
+    const d = new Date(due);
+    if (isToday(d)) return "Today";
+    if (isTomorrow(d)) return "Tomorrow";
+    if (isPast(d)) return `Overdue ${format(d, "MMM d")}`;
+    return format(d, "MMM d");
+  } catch {
+    return "—";
+  }
+}
+
+function scheduleTimeRange(t: Task): string {
+  if (t.start_time) {
+    const start = formatPH(t.start_time, "h:mm a");
+    const dur = t.estimated_duration;
+    if (dur && dur > 0) {
+      try {
+        const endDate = new Date(new Date(t.start_time).getTime() + dur * 60_000);
+        return `${start} – ${formatPH(endDate.toISOString(), "h:mm a")}`;
+      } catch {
+        return start;
+      }
+    }
+    return start;
+  }
+  return "—";
+}
 
 export default function Dashboard() {
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [projects, setProjects] = useState<{ id: string; name: string; color: string }[]>([]);
-  const [aiPicks, setAiPicks] = useState<any[]>([]);
-  const [loadingPicks, setLoadingPicks] = useState(false);
-  const [expandedStat, setExpandedStat] = useState<string | null>(null);
-
-  // Module summaries stored from last visit
   const [deadlineRiskCount, setDeadlineRiskCount] = useState(0);
   const [focusTaskTitle, setFocusTaskTitle] = useState<string | null>(null);
-  const [adaptiveBlockCount, setAdaptiveBlockCount] = useState(0);
   const [productivityScore, setProductivityScore] = useState<number | null>(null);
+  const [adaptiveStatus, setAdaptiveStatus] = useState<string>("Up to date");
+  const [todayPicks, setTodayPicks] = useState<TodayPick[]>([]);
+  const [loadingPicks, setLoadingPicks] = useState(false);
 
   const fetchTasks = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
-    const [{ data: taskData }, { data: projectData }] = await Promise.all([
-      supabase.from("tasks").select("id, title, status, due_date, start_time, priority_score, category, project_id").eq("user_id", user.id),
-      supabase.from("projects").select("id, name, color").eq("user_id", user.id),
-    ]);
-    setTasks(taskData || []);
-    setProjects(projectData || []);
+    const { data: taskData } = await supabase
+      .from("tasks")
+      .select("id, title, status, due_date, start_time, priority_score, category, project_id, estimated_duration")
+      .eq("user_id", user.id);
+    setTasks((taskData as Task[]) || []);
   };
 
   const checkStartTimes = useCallback(async () => {
     const now = new Date();
     const tasksToUpdate = tasks.filter(
-      t => t.status === "todo" && t.start_time && new Date(t.start_time) <= now
+      (t) => t.status === "todo" && t.start_time && new Date(t.start_time) <= now
     );
     for (const task of tasksToUpdate) {
       await supabase.from("tasks").update({ status: "in_progress" }).eq("id", task.id);
-      if (Notification.permission === "granted") {
-        new Notification("Task Started", { body: `"${task.title}" is now in progress!` });
-      }
-      toast.info(`"${task.title}" is now in progress!`);
     }
     if (tasksToUpdate.length > 0) fetchTasks();
   }, [tasks]);
 
   const fetchModuleSummaries = async () => {
-    // Deadline risk
+    const todayPH = formatPH(new Date(), "yyyy-MM-dd");
+
     const { data: riskData } = await supabase
       .from("tasks")
       .select("due_date, status")
-      .not("due_date", "is", null);
-    const todayPH = formatPH(new Date(), "yyyy-MM-dd");
-    const atRisk = (riskData || []).filter(t => {
+      .not("due_date", "is", null)
+      .neq("status", "done");
+
+    const atRisk = (riskData || []).filter((t) => {
       const duePH = formatPH(t.due_date!, "yyyy-MM-dd");
       const dueDate = new Date(duePH + "T00:00:00");
       const todayDate = new Date(todayPH + "T00:00:00");
@@ -84,7 +122,6 @@ export default function Dashboard() {
     });
     setDeadlineRiskCount(atRisk.length);
 
-    // Focus mode - highest priority task
     const { data: focusData } = await supabase
       .from("tasks")
       .select("title")
@@ -93,7 +130,6 @@ export default function Dashboard() {
       .limit(1);
     setFocusTaskTitle(focusData?.[0]?.title || null);
 
-    // Productivity score from behavior logs
     const { data: behaviorData } = await supabase
       .from("behavior_logs")
       .select("value")
@@ -103,12 +139,44 @@ export default function Dashboard() {
     if (behaviorData?.[0]) {
       const val = behaviorData[0].value;
       setProductivityScore(typeof val === "number" ? val : (val as any)?.score ?? null);
+    } else {
+      setProductivityScore(null);
     }
+  };
+
+  const loadTodayRecommendations = async () => {
+    const cached = loadCache<{ picks?: TodayPick[] }>(TODAY_CACHE_KEY);
+    if (cached?.picks?.length) {
+      setTodayPicks(cached.picks.slice(0, 3));
+      return;
+    }
+    setLoadingPicks(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("smart-picks", { body: {} });
+      if (!error && data?.picks) {
+        setTodayPicks((data.picks as TodayPick[]).slice(0, 3));
+      }
+    } catch {
+      // dashboard still works without picks
+    }
+    setLoadingPicks(false);
+  };
+
+  const loadAdaptiveStatus = () => {
+    const adaptive = loadCache<{ blocks?: unknown[] }>(ADAPTIVE_CACHE_KEY);
+    const auto = loadCache<{ blocks?: unknown[] }>(AUTO_CACHE_KEY);
+    if (!adaptive?.blocks?.length && !auto?.blocks?.length) {
+      setAdaptiveStatus("No schedule yet");
+      return;
+    }
+    setAdaptiveStatus("Schedule up to date");
   };
 
   useEffect(() => {
     fetchTasks();
     fetchModuleSummaries();
+    loadTodayRecommendations();
+    loadAdaptiveStatus();
     if ("Notification" in window && Notification.permission === "default") {
       Notification.requestPermission();
     }
@@ -121,7 +189,9 @@ export default function Dashboard() {
       })
       .subscribe();
 
-    return () => { supabase.removeChannel(channel); };
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   useEffect(() => {
@@ -131,132 +201,103 @@ export default function Dashboard() {
   }, [checkStartTimes]);
 
   const todayPH = formatPH(new Date(), "yyyy-MM-dd");
-  const dueTodayTasks = tasks.filter(t => {
-    if (!t.due_date || t.status === "done") return false;
-    return formatPH(t.due_date, "yyyy-MM-dd") === todayPH;
-  });
-  const inProgressTasks = tasks.filter(t => t.status === "in_progress");
-  const completedTasks = tasks.filter(t => t.status === "done");
-  const priorityTasks = tasks.filter(t => (t.priority_score ?? 0) >= 70 && t.status !== "done");
+  const inProgressTasks = tasks.filter((t) => t.status === "in_progress");
+  const completedTasks = tasks.filter((t) => t.status === "done");
+  const todoCount = tasks.filter((t) => t.status === "todo").length;
 
-  // This week tasks
-  const now = new Date();
-  const startOfWeek = new Date(now);
-  startOfWeek.setDate(now.getDate() - now.getDay());
-  startOfWeek.setHours(0, 0, 0, 0);
-  const endOfWeek = new Date(startOfWeek);
-  endOfWeek.setDate(startOfWeek.getDate() + 6);
-  endOfWeek.setHours(23, 59, 59, 999);
+  const todaysSchedule = useMemo(() => {
+    const withStart = tasks.filter((t) => {
+      if (!t.start_time || t.status === "done") return false;
+      return formatPH(t.start_time, "yyyy-MM-dd") === todayPH;
+    });
+    if (withStart.length > 0) {
+      return [...withStart].sort(
+        (a, b) => new Date(a.start_time!).getTime() - new Date(b.start_time!).getTime()
+      );
+    }
+    return tasks
+      .filter((t) => t.due_date && t.status !== "done" && formatPH(t.due_date, "yyyy-MM-dd") === todayPH)
+      .sort((a, b) => (b.priority_score ?? 0) - (a.priority_score ?? 0));
+  }, [tasks, todayPH]);
 
-  const thisWeekTasks = tasks.filter(t => {
-    if (!t.due_date) return false;
-    const dueDate = new Date(t.due_date);
-    return dueDate >= startOfWeek && dueDate <= endOfWeek;
-  });
+  const thisWeekTasks = useMemo(() => {
+    const now = new Date();
+    const startOfWeek = new Date(now);
+    startOfWeek.setDate(now.getDate() - now.getDay());
+    startOfWeek.setHours(0, 0, 0, 0);
+    const endOfWeek = new Date(startOfWeek);
+    endOfWeek.setDate(startOfWeek.getDate() + 6);
+    endOfWeek.setHours(23, 59, 59, 999);
 
-  const stats = [
-    { key: "due_today", label: "Due Today", value: dueTodayTasks.length, tasks: dueTodayTasks, icon: Clock, color: "text-warning" },
-    { key: "in_progress", label: "In Progress", value: inProgressTasks.length, tasks: inProgressTasks, icon: Target, color: "text-info" },
-    { key: "completed", label: "Completed", value: completedTasks.length, tasks: completedTasks, icon: CheckCircle2, color: "text-success" },
-    { key: "priority", label: "Priority", value: priorityTasks.length, tasks: priorityTasks, icon: Zap, color: "text-destructive" },
-  ];
-
-  const todayTasks = dueTodayTasks;
+    return tasks
+      .filter((t) => {
+        if (!t.due_date || t.status === "done") return false;
+        const dueDate = new Date(t.due_date);
+        return dueDate >= startOfWeek && dueDate <= endOfWeek;
+      })
+      .sort((a, b) => new Date(a.due_date!).getTime() - new Date(b.due_date!).getTime());
+  }, [tasks]);
 
   const statusBreakdown = [
-    { name: "To Do", value: tasks.filter(t => t.status === "todo").length, color: "hsl(var(--muted-foreground))" },
+    { name: "To Do", value: todoCount, color: "hsl(var(--muted-foreground))" },
     { name: "In Progress", value: inProgressTasks.length, color: "hsl(var(--warning))" },
-    { name: "Done", value: completedTasks.length, color: "hsl(var(--success))" },
-  ].filter(s => s.value > 0);
+    { name: "Completed", value: completedTasks.length, color: "hsl(var(--success))" },
+  ].filter((s) => s.value > 0);
 
-  const generateAiPicks = async () => {
-    setLoadingPicks(true);
-    try {
-      const { data, error } = await supabase.functions.invoke("smart-picks", {
-        body: { tasks: tasks.filter(t => t.status !== "done") },
-      });
-      if (error) throw error;
-      setAiPicks(data?.picks || []);
-      toast.success("AI picks generated!");
-    } catch (err: any) {
-      toast.error(err.message || "Failed to generate picks");
-    }
-    setLoadingPicks(false);
-  };
+  const totalTasks = todoCount + inProgressTasks.length + completedTasks.length;
+
+  const taskMeta = useMemo(() => {
+    const m: Record<string, Task> = {};
+    tasks.forEach((t) => {
+      m[t.id] = t;
+    });
+    return m;
+  }, [tasks]);
+
+  const weekPreview = thisWeekTasks.slice(0, 8);
+  const hasMoreWeek = thisWeekTasks.length > 8;
 
   return (
     <motion.div variants={stagger} initial="hidden" animate="show" className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
           <h1 className="font-display text-3xl font-bold">GSI</h1>
-          <p className="font-display text-lg font-semibold tracking-widest uppercase text-muted-foreground">Schedule Planner</p>
+          <p className="font-display text-lg font-semibold tracking-widest uppercase text-muted-foreground">
+            Schedule Planner
+          </p>
         </div>
-        <div className="flex items-center gap-2">
-          <Button asChild>
-            <Link to="/add-task"><PlusCircle className="mr-2 h-4 w-4" /> Add Task</Link>
-          </Button>
-        </div>
+        <Button asChild>
+          <Link to="/add-task">
+            <PlusCircle className="mr-2 h-4 w-4" /> Add Task
+          </Link>
+        </Button>
       </div>
 
-
-
-      {/* Stats */}
-      <motion.div variants={stagger} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {stats.map((s) => (
-          <motion.div key={s.label} variants={fadeIn}>
-            <Card
-              className="cursor-pointer hover:shadow-md transition-shadow"
-              onClick={() => setExpandedStat(expandedStat === s.key ? null : s.key)}
-            >
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">{s.label}</CardTitle>
-                <s.icon className={`h-4 w-4 ${s.color}`} />
-              </CardHeader>
-              <CardContent>
-                <p className="text-3xl font-display font-bold">{s.value}</p>
-                {expandedStat === s.key && s.tasks.length > 0 && (
-                  <div className="mt-3 space-y-1.5 border-t pt-3">
-                    {s.tasks.slice(0, 5).map(t => (
-                      <div key={t.id} className="flex items-center justify-between text-sm">
-                        <span className="truncate flex-1">{t.title}</span>
-                        {t.category && <Badge variant="outline" className="ml-2 text-xs">{t.category}</Badge>}
-                      </div>
-                    ))}
-                    {s.tasks.length > 5 && (
-                      <p className="text-xs text-muted-foreground">+{s.tasks.length - 5} more</p>
-                    )}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </motion.div>
-        ))}
-      </motion.div>
-
-      {/* Status breakdown */}
+      {/* 1. Task Overview */}
       <motion.div variants={fadeIn}>
         <Card>
-          <CardHeader>
-            <CardTitle className="font-display">Task Status Breakdown</CardTitle>
+          <CardHeader className="pb-2">
+            <CardTitle className="font-display text-lg">Task Overview</CardTitle>
           </CardHeader>
           <CardContent>
-            {tasks.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-10">No tasks yet</p>
+            {totalTasks === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-8">No tasks yet</p>
             ) : (
-              <div className="h-64">
+              <div className="h-[200px] w-full">
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie
                       data={statusBreakdown}
                       dataKey="value"
                       nameKey="name"
-                      innerRadius={55}
-                      outerRadius={95}
-                      paddingAngle={3}
-                      label={(e: any) => `${e.name}: ${e.value}`}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={48}
+                      outerRadius={72}
+                      paddingAngle={2}
                     >
-                      {statusBreakdown.map((s) => (
-                        <Cell key={s.name} fill={s.color} />
+                      {statusBreakdown.map((entry, i) => (
+                        <Cell key={i} fill={entry.color} />
                       ))}
                     </Pie>
                     <Tooltip
@@ -276,176 +317,247 @@ export default function Dashboard() {
         </Card>
       </motion.div>
 
-
-
-      {/* Today's Schedule + AI Picks */}
-      <div className="grid gap-6 lg:grid-cols-2">
-        <motion.div variants={fadeIn}>
-          <Card className="h-full">
-            <CardHeader>
-              <CardTitle className="font-display">Today's Schedule</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {todayTasks.length === 0 ? (
-                <div className="flex items-center justify-center h-48 text-muted-foreground">
-                  <p>No tasks scheduled for today. <Link to="/add-task" className="text-primary hover:underline">Add one?</Link></p>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {todayTasks.map(t => (
-                    <div key={t.id} className="flex items-center gap-3 p-3 rounded-lg bg-accent/30">
-                      <div className={`h-2 w-2 rounded-full ${t.status === "in_progress" ? "bg-info" : "bg-warning"}`} />
-                      <div className="flex-1">
-                        <p className="text-sm font-medium">{t.title}</p>
-                        {t.category && <p className="text-xs text-muted-foreground">{t.category}</p>}
-                      </div>
-                      <div className="text-right">
-                        {t.due_date && (
-                          <span className="text-xs font-medium text-destructive">
-                            Deadline: {formatPH(t.due_date, "h:mm a")}
-                          </span>
-                        )}
-                        {t.start_time && (
-                          <p className="text-xs text-muted-foreground">
-                            Start: {formatPH(t.start_time, "h:mm a")}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </motion.div>
-
-        <motion.div variants={fadeIn}>
-          <Card className="h-full">
-            <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle className="font-display flex items-center gap-2">
-                <Zap className="h-4 w-4 text-primary" /> AI Top Picks
-              </CardTitle>
-              <Button size="sm" variant="outline" onClick={generateAiPicks} disabled={loadingPicks}>
-                {loadingPicks ? <Loader2 className="mr-2 h-3 w-3 animate-spin" /> : <Sparkles className="mr-2 h-3 w-3" />}
-                Generate
-              </Button>
-            </CardHeader>
-            <CardContent>
-              {aiPicks.length === 0 ? (
-                <div className="flex items-center justify-center h-48 text-muted-foreground">
-                  <p>Click "Generate" to get AI-powered recommendations</p>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {aiPicks.map((pick: any, i: number) => (
-                    <div key={i} className="flex items-center gap-3 p-3 rounded-lg bg-accent/30">
-                      <span className="text-sm font-bold text-primary">{i + 1}</span>
-                      <div className="flex-1">
-                        <p className="text-sm font-medium">{pick.title || pick}</p>
-                        {pick.reason && <p className="text-xs text-muted-foreground">{pick.reason}</p>}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </motion.div>
-      </div>
-
-      {/* This Week */}
+      {/* 2. Today's AI Recommendation */}
       <motion.div variants={fadeIn}>
         <Card>
-          <CardHeader>
-            <CardTitle className="font-display flex items-center gap-2">
-              <CalendarRange className="h-4 w-4 text-primary" /> This Week
-              <Badge variant="secondary" className="ml-2">{thisWeekTasks.length}</Badge>
-            </CardTitle>
+          <CardHeader className="pb-2 flex flex-row items-center justify-between gap-2 space-y-0">
+            <div>
+              <CardTitle className="font-display text-lg">Today&apos;s AI Recommendation</CardTitle>
+              <p className="text-xs text-muted-foreground mt-0.5">What should you work on today?</p>
+            </div>
+            <Button variant="outline" size="sm" asChild>
+              <Link to="/today">
+                View All Recommendations
+                <ChevronRight className="ml-1 h-3.5 w-3.5" />
+              </Link>
+            </Button>
           </CardHeader>
-          <CardContent>
-            {thisWeekTasks.length === 0 ? (
-              <p className="text-muted-foreground text-sm text-center py-6">No tasks scheduled this week</p>
+          <CardContent className="p-0">
+            {loadingPicks ? (
+              <div className="flex justify-center py-8">
+                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+              </div>
+            ) : todayPicks.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-8 px-4">
+                No recommendations yet. Open Today AI Recommendation to generate them.
+              </p>
             ) : (
-              <div className="space-y-2">
-                {thisWeekTasks.slice(0, 8).map(t => (
-                  <div key={t.id} className="flex items-center justify-between p-2.5 rounded-lg bg-accent/30">
-                    <div className="flex items-center gap-2 flex-1 min-w-0">
-                      <div className={`h-2 w-2 rounded-full shrink-0 ${t.status === "done" ? "bg-success" : t.status === "in_progress" ? "bg-info" : "bg-muted-foreground"}`} />
-                      <span className={`text-sm truncate ${t.status === "done" ? "line-through opacity-60" : ""}`}>{t.title}</span>
+              <div className="divide-y">
+                {todayPicks.map((p, i) => {
+                  const t = taskMeta[p.id];
+                  const pr = t
+                    ? priorityFromScore(t.priority_score)
+                    : ((p.priority as "high" | "medium" | "low") || "medium");
+                  const style = PRIORITY_STYLES[pr] || PRIORITY_STYLES.medium;
+                  const dur = t?.estimated_duration;
+                  return (
+                    <div key={p.id} className="px-4 py-3 flex gap-3 items-start">
+                      <span className="text-sm font-display font-bold text-muted-foreground w-6 shrink-0">
+                        #{i + 1}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium truncate">{p.title}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5 flex flex-wrap gap-x-2 gap-y-0.5 items-center">
+                          <Badge variant="outline" className={`text-[10px] ${style.className}`}>
+                            {style.label}
+                          </Badge>
+                          <span>{dueShort(t?.due_date ?? null)}</span>
+                          {dur != null && <span>{dur} min</span>}
+                        </p>
+                        {p.reason && (
+                          <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{p.reason}</p>
+                        )}
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      {t.due_date && <span className="text-xs text-muted-foreground">{formatDate(t.due_date)}</span>}
-                      <Badge variant="outline" className={`text-xs ${statusBadgeClass[t.status] || ""}`}>{statusLabel(t.status)}</Badge>
-                    </div>
-                  </div>
-                ))}
-                {thisWeekTasks.length > 8 && (
-                  <p className="text-xs text-muted-foreground text-center">+{thisWeekTasks.length - 8} more tasks</p>
-                )}
+                  );
+                })}
               </div>
             )}
           </CardContent>
         </Card>
       </motion.div>
 
-      {/* AI Module Summaries */}
-      <motion.div variants={stagger} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <motion.div variants={fadeIn}>
-          <Link to="/deadline-risk">
-            <Card className="hover:shadow-md transition-shadow cursor-pointer border-l-4 border-destructive/50">
-              <CardContent className="pt-5 pb-4">
-                <div className="flex items-center gap-2 mb-1">
-                  <AlertTriangle className="h-4 w-4 text-destructive" />
+      {/* 3. Today's Schedule */}
+      <motion.div variants={fadeIn}>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="font-display text-lg">Today&apos;s Schedule</CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            {todaysSchedule.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-8 px-4">
+                No tasks scheduled for today.{" "}
+                <Link to="/add-task" className="text-primary hover:underline">
+                  Add one?
+                </Link>
+              </p>
+            ) : (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-muted/40">
+                      <TableHead className="text-xs w-36">Time</TableHead>
+                      <TableHead className="text-xs">Task</TableHead>
+                      <TableHead className="text-xs w-24">Priority</TableHead>
+                      <TableHead className="text-xs w-28">Status</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {todaysSchedule.map((t) => {
+                      const pr = priorityFromScore(t.priority_score);
+                      const style = PRIORITY_STYLES[pr];
+                      return (
+                        <TableRow key={t.id} className="text-sm">
+                          <TableCell className="py-2 font-mono text-xs whitespace-nowrap">
+                            {t.start_time ? scheduleTimeRange(t) : "Unscheduled"}
+                            {t.due_date && (
+                              <span className="block text-[10px] text-muted-foreground mt-0.5">
+                                Due {formatPH(t.due_date, "h:mm a")}
+                              </span>
+                            )}
+                          </TableCell>
+                          <TableCell className="py-2 font-medium max-w-[200px] truncate">{t.title}</TableCell>
+                          <TableCell className="py-2">
+                            <Badge variant="outline" className={`text-[10px] ${style.className}`}>
+                              {style.label}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="py-2">
+                            <Badge variant="outline" className={`text-[10px] ${statusBadgeClass[t.status] || ""}`}>
+                              {statusLabel(t.status)}
+                            </Badge>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </motion.div>
+
+      {/* 4. This Week */}
+      <motion.div variants={fadeIn}>
+        <Card>
+          <CardHeader className="pb-2 flex flex-row items-center justify-between gap-2 space-y-0">
+            <CardTitle className="font-display text-lg">This Week</CardTitle>
+            {(hasMoreWeek || thisWeekTasks.length > 0) && (
+              <Button variant="outline" size="sm" asChild>
+                <Link to="/this-week">
+                  View This Week
+                  <ChevronRight className="ml-1 h-3.5 w-3.5" />
+                </Link>
+              </Button>
+            )}
+          </CardHeader>
+          <CardContent className="p-0">
+            {weekPreview.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-8 px-4">No tasks due this week.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-muted/40">
+                      <TableHead className="text-xs w-28">Date</TableHead>
+                      <TableHead className="text-xs">Task</TableHead>
+                      <TableHead className="text-xs w-24">Priority</TableHead>
+                      <TableHead className="text-xs w-28">Status</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {weekPreview.map((t) => {
+                      const pr = priorityFromScore(t.priority_score);
+                      const style = PRIORITY_STYLES[pr];
+                      let dateLabel = "—";
+                      if (t.due_date) {
+                        try {
+                          const d = new Date(t.due_date);
+                          dateLabel = isToday(d) ? "Today" : format(d, "EEE");
+                        } catch {
+                          dateLabel = formatPH(t.due_date, "EEE");
+                        }
+                      }
+                      return (
+                        <TableRow key={t.id} className="text-sm">
+                          <TableCell className="py-2 text-xs text-muted-foreground whitespace-nowrap">
+                            {dateLabel}
+                          </TableCell>
+                          <TableCell className="py-2 font-medium max-w-[200px] truncate">{t.title}</TableCell>
+                          <TableCell className="py-2">
+                            <Badge variant="outline" className={`text-[10px] ${style.className}`}>
+                              {style.label}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="py-2">
+                            <Badge variant="outline" className={`text-[10px] ${statusBadgeClass[t.status] || ""}`}>
+                              {statusLabel(t.status)}
+                            </Badge>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </motion.div>
+
+      {/* 5. Attention */}
+      <motion.div variants={fadeIn}>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="font-display text-lg">Attention</CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="divide-y">
+              <Link to="/deadline-risk" className="flex items-center gap-3 px-4 py-3 hover:bg-accent/40 transition-colors">
+                <AlertTriangle className="h-4 w-4 text-destructive shrink-0" />
+                <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium">Deadline Risk</p>
+                  <p className="text-xs text-muted-foreground">
+                    {deadlineRiskCount} task{deadlineRiskCount === 1 ? "" : "s"} at risk
+                  </p>
                 </div>
-                <p className="text-2xl font-display font-bold">{deadlineRiskCount}</p>
-                <p className="text-xs text-muted-foreground">tasks at risk</p>
-              </CardContent>
-            </Card>
-          </Link>
-        </motion.div>
-        <motion.div variants={fadeIn}>
-          <Link to="/focus-mode">
-            <Card className="hover:shadow-md transition-shadow cursor-pointer border-l-4 border-primary/50">
-              <CardContent className="pt-5 pb-4">
-                <div className="flex items-center gap-2 mb-1">
-                  <Focus className="h-4 w-4 text-primary" />
-                  <p className="text-sm font-medium">Focus Mode</p>
+                <span className="text-xs text-primary shrink-0">View</span>
+              </Link>
+
+              <Link to="/focus-mode" className="flex items-center gap-3 px-4 py-3 hover:bg-accent/40 transition-colors">
+                <Focus className="h-4 w-4 text-primary shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium">Focus Task</p>
+                  <p className="text-xs text-muted-foreground truncate">
+                    {focusTaskTitle ? `Current focus: ${focusTaskTitle}` : "No focus task"}
+                  </p>
                 </div>
-                <p className="text-sm font-display font-bold truncate">{focusTaskTitle || "No focus task"}</p>
-                <p className="text-xs text-muted-foreground">top priority</p>
-              </CardContent>
-            </Card>
-          </Link>
-        </motion.div>
-        <motion.div variants={fadeIn}>
-          <Link to="/adaptive-scheduling">
-            <Card className="hover:shadow-md transition-shadow cursor-pointer border-l-4 border-info/50">
-              <CardContent className="pt-5 pb-4">
-                <div className="flex items-center gap-2 mb-1">
-                  <RefreshCw className="h-4 w-4 text-info" />
-                  <p className="text-sm font-medium">Adaptive Scheduling</p>
+                <span className="text-xs text-primary shrink-0">Start Focus</span>
+              </Link>
+
+              <Link to="/adaptive-scheduling" className="flex items-center gap-3 px-4 py-3 hover:bg-accent/40 transition-colors">
+                <RefreshCw className="h-4 w-4 text-info shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium">Adaptive Schedule</p>
+                  <p className="text-xs text-muted-foreground">{adaptiveStatus}</p>
                 </div>
-                <p className="text-sm font-display font-bold">AI-Powered</p>
-                <p className="text-xs text-muted-foreground">rearrange your day</p>
-              </CardContent>
-            </Card>
-          </Link>
-        </motion.div>
-        <motion.div variants={fadeIn}>
-          <Link to="/productivity-insights">
-            <Card className="hover:shadow-md transition-shadow cursor-pointer border-l-4 border-warning/50">
-              <CardContent className="pt-5 pb-4">
-                <div className="flex items-center gap-2 mb-1">
-                  <BarChart3 className="h-4 w-4 text-warning" />
+                <span className="text-xs text-primary shrink-0">View</span>
+              </Link>
+
+              <Link to="/productivity-insights" className="flex items-center gap-3 px-4 py-3 hover:bg-accent/40 transition-colors">
+                <BarChart3 className="h-4 w-4 text-warning shrink-0" />
+                <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium">Productivity</p>
+                  <p className="text-xs text-muted-foreground">
+                    {productivityScore != null ? `${productivityScore}%` : "Not available yet"}
+                  </p>
                 </div>
-                <p className="text-2xl font-display font-bold">{productivityScore != null ? `${productivityScore}%` : "—"}</p>
-                <p className="text-xs text-muted-foreground">score</p>
-              </CardContent>
-            </Card>
-          </Link>
-        </motion.div>
+                <span className="text-xs text-primary shrink-0">View</span>
+              </Link>
+            </div>
+          </CardContent>
+        </Card>
       </motion.div>
     </motion.div>
   );
