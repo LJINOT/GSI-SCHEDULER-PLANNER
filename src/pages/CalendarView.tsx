@@ -25,7 +25,6 @@ type Task = {
   status: string; category: string | null; estimated_duration: number | null;
   difficulty: string | null; priority_score: number | null; start_time: string | null;
 };
-
 type ViewMode = "day" | "week" | "month" | "schedule";
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
@@ -84,11 +83,13 @@ export default function CalendarView() {
   useEffect(() => { fetchTasks(); }, [fetchTasks]);
 
   const goToday = () => setCurrentDate(new Date());
+
   const goPrev = () => {
     if (viewMode === "month") setCurrentDate(d => subMonths(d, 1));
     else if (viewMode === "week") setCurrentDate(d => subWeeks(d, 1));
     else setCurrentDate(d => addDays(d, -1));
   };
+
   const goNext = () => {
     if (viewMode === "month") setCurrentDate(d => addMonths(d, 1));
     else if (viewMode === "week") setCurrentDate(d => addWeeks(d, 1));
@@ -197,7 +198,6 @@ export default function CalendarView() {
     const hasTask = (d: Date) => datesWithTasks.has(format(d, "yyyy-MM-dd"));
     const isHighPriority = (d: Date) => highPriorityDates.has(format(d, "yyyy-MM-dd"));
     const isRisk = (d: Date) => riskDates.has(format(d, "yyyy-MM-dd"));
-
     if (filter === "high") return { hasTask, isHighPriority };
     if (filter === "risk") return { hasTask, isRisk };
     return { hasTask };
@@ -214,6 +214,7 @@ export default function CalendarView() {
 
   // Drag handlers
   const handleDragStart = (task: Task) => setDraggedTask(task);
+
   const handleDrop = async (day: Date, hour: number) => {
     if (!draggedTask) return;
     const newDate = new Date(day);
@@ -303,11 +304,15 @@ export default function CalendarView() {
 
   return (
     <div className="flex flex-col h-[calc(100vh-3rem)] -m-6">
-      {/* Top Bar */}
+      {/* Top Bar – already has both arrows (kept as-is) */}
       <div className="flex items-center gap-2 px-4 py-2 border-b bg-card shrink-0">
         <div className="flex items-center gap-1">
-          <Button variant="ghost" size="icon" onClick={goPrev}><ChevronLeft className="h-4 w-4" /></Button>
-          <Button variant="ghost" size="icon" onClick={goNext}><ChevronRight className="h-4 w-4" /></Button>
+          <Button variant="ghost" size="icon" onClick={goPrev} aria-label="Previous">
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <Button variant="ghost" size="icon" onClick={goNext} aria-label="Next">
+            <ChevronRight className="h-4 w-4" />
+          </Button>
           <Button variant="outline" size="sm" onClick={goToday}>Today</Button>
         </div>
         <h2 className="font-display text-lg font-semibold min-w-[160px]">{headerTitle}</h2>
@@ -346,12 +351,27 @@ export default function CalendarView() {
         {/* Left Sidebar */}
         <div className="w-56 border-r bg-card shrink-0 flex flex-col">
           <ScrollArea className="flex-1 p-3">
-            {/* Mini Calendar with task markers */}
+            {/* ─── FIXED Mini Calendar ─── */}
+            {/* The previous className was too aggressive and clipped the right arrow.
+                We now keep both nav buttons visible and properly sized. */}
             <Calendar
               mode="single"
               selected={currentDate}
               onSelect={d => d && setCurrentDate(d)}
-              className="p-0 [&_table]:w-full [&_td]:h-7 [&_td]:w-7 [&_button]:h-7 [&_button]:w-7 [&_button]:text-[11px]"
+              className="p-0 w-full"
+              classNames={{
+                // Keep the compact day cells
+                table: "w-full",
+                head_cell: "w-7 text-[11px]",
+                cell: "h-7 w-7 text-center text-[11px] p-0",
+                day: "h-7 w-7 p-0 text-[11px]",
+                // Critical: ensure both arrows stay visible and clickable
+                caption: "flex justify-center pt-1 relative items-center mb-1",
+                nav: "flex items-center gap-1",
+                nav_button: "h-7 w-7 bg-transparent p-0 opacity-70 hover:opacity-100",
+                nav_button_previous: "absolute left-0",
+                nav_button_next: "absolute right-0",
+              }}
               modifiers={calendarModifiers}
               modifiersClassNames={calendarModifierStyles}
             />
@@ -533,7 +553,6 @@ function TimeGrid({
             </div>
           ))}
         </div>
-
         {HOURS.map(hour => (
           <div key={hour} className="flex" style={{ height: BLOCK_HEIGHT }}>
             <div className="w-14 shrink-0 text-[11px] text-muted-foreground text-right pr-2 pt-0.5">
@@ -546,7 +565,6 @@ function TimeGrid({
                 const startH = 9 + i;
                 return startH === hour;
               });
-
               return (
                 <div
                   key={day.toISOString()}
@@ -699,13 +717,11 @@ function TaskInspector({ task, onClose, onRefresh }: { task: Task; onClose: () =
         <h3 className="font-display font-semibold text-sm">Task Inspector</h3>
         <Button variant="ghost" size="icon" onClick={onClose}><X className="h-4 w-4" /></Button>
       </div>
-
       <div className="space-y-4 flex-1">
         <div>
           <p className="font-semibold">{task.title}</p>
           {task.description && <p className="text-sm text-muted-foreground mt-1">{task.description}</p>}
         </div>
-
         <div className="grid grid-cols-2 gap-2 text-sm">
           <div>
             <p className="text-xs text-muted-foreground">Start</p>
@@ -734,9 +750,7 @@ function TaskInspector({ task, onClose, onRefresh }: { task: Task; onClose: () =
             <Badge variant="outline" className="text-xs capitalize">{task.status.replace("_", " ")}</Badge>
           </div>
         </div>
-
         <Separator />
-
         <div>
           <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1">
             <Sparkles className="h-3 w-3" /> Smart Actions
@@ -753,9 +767,7 @@ function TaskInspector({ task, onClose, onRefresh }: { task: Task; onClose: () =
             </Button>
           </div>
         </div>
-
         <Separator />
-
         <div>
           <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1">
             <Brain className="h-3 w-3" /> Behavioral Insights
